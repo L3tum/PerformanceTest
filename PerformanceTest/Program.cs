@@ -9,53 +9,107 @@ using System.Reflection;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace PerformanceTest
 {
     internal static class Program
     {
-        private static HttpClient httpClient;
+        private static WrapperClient httpClient;
         private static List<PerformanceTest> performanceTests;
-        private static readonly int users = 5200;
+        private static readonly int users = 7500;
         private static readonly int spawnRate = 500;
         private static readonly int runTimeInSeconds = 30;
         private static readonly string testToExecute = "TestPerformance";
         private static CountdownEvent countdownEvent;
-        private static Thread[] threads;
         private static Stopwatch stopwatch;
         private static ConcurrentStack<Statistic> globalStats;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-        private static void DoRequests(ref CancellationToken token, ref PerformanceTest test)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void QueueTask(CancellationToken token, PerformanceTest test, bool delay)
         {
+            if (token.IsCancellationRequested)
+            {
+                countdownEvent.Signal();
+                return;
+            }
+
+            ThreadPool.QueueUserWorkItem(state =>
+            {
+                var (tok, tes) = (ValueTuple<CancellationToken, PerformanceTest>) state!;
+                Task.Delay(delay ? new Random().Next(tes.MinWaitTime(), tes.MaxWaitTime()) : 0)
+                    .ContinueWith(t =>
+                    {
+                        var request = tes.GetRequest();
+                        return httpClient.SendAsync(request,
+                            tes.WaitForBody()
+                                ? HttpCompletionOption.ResponseContentRead
+                                : HttpCompletionOption.ResponseHeadersRead, tok);
+                    })
+                    .ContinueWith(async t =>
+                    {
+                        if (tok.IsCancellationRequested)
+                        {
+                            countdownEvent.Signal();
+                            return;
+                        }
+
+                        var response = await await t;
+                        Statistic statistic;
+                        statistic.Success = tes.IsSuccessful(response.ResponseMessage);
+                        statistic.RequestMethod = response.ResponseMessage.RequestMessage!.Method.Method;
+                        statistic.RequestUri = response.ResponseMessage.RequestMessage!.RequestUri!.ToString();
+                        statistic.StatusCode = (int) response.ResponseMessage.StatusCode;
+                        statistic.TimeTakenMilliseconds = (int) response.TimeTaken;
+                        globalStats.Push(statistic);
+
+                        if (tok.IsCancellationRequested)
+                        {
+                            countdownEvent.Signal();
+                            return;
+                        }
+
+                        QueueTask(tok, test, true);
+                    });
+            }, (token, test));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void DoRequest(object state)
+        {
+            var (token, test) = (ValueTuple<CancellationToken, PerformanceTest>) state;
             try
             {
-                var waitTime = new Random().Next(test.MinWaitTime(), test.MaxWaitTime());
-
-                while (!token.IsCancellationRequested)
+                if (token.IsCancellationRequested)
                 {
-                    Statistic statistic;
-                    var request = test.GetRequest();
-                    statistic.RequestMethod = request.Method.Method;
-                    statistic.RequestUri = request.RequestUri!.ToString();
-                    var startTime = stopwatch.ElapsedMilliseconds;
-                    var response = httpClient.Send(request,
-                        test.WaitForBody()
-                            ? HttpCompletionOption.ResponseContentRead
-                            : HttpCompletionOption.ResponseHeadersRead, token);
-                    var timeTaken = stopwatch.ElapsedMilliseconds - startTime;
-                    statistic.Success = test.IsSuccessful(response);
-                    statistic.TimeTakenMilliseconds = (int) timeTaken;
-                    statistic.StatusCode = (int) response.StatusCode;
-                    globalStats.Push(statistic);
-
-                    if (!token.IsCancellationRequested)
-                    {
-                        Thread.Sleep(waitTime);
-                    }
+                    countdownEvent.Signal();
+                    return;
                 }
 
-                countdownEvent.Signal();
+                var waitTime = new Random().Next(test.MinWaitTime(), test.MaxWaitTime());
+                var request = test.GetRequest();
+                var startTime = stopwatch.ElapsedMilliseconds;
+                var response = httpClient.Send(request,
+                    test.WaitForBody()
+                        ? HttpCompletionOption.ResponseContentRead
+                        : HttpCompletionOption.ResponseHeadersRead);
+                var timeTaken = stopwatch.ElapsedMilliseconds - startTime;
+                Statistic statistic;
+                statistic.Success = test.IsSuccessful(response);
+                statistic.RequestMethod = request.Method.Method;
+                statistic.RequestUri = request.RequestUri!.ToString();
+                statistic.StatusCode = (int) response.StatusCode;
+                statistic.TimeTakenMilliseconds = (int) timeTaken;
+                globalStats.Push(statistic);
+
+                if (token.IsCancellationRequested)
+                {
+                    countdownEvent.Signal();
+                    return;
+                }
+
+                ThreadPool.QueueUserWorkItem(stat => Task.Delay(waitTime).ContinueWith(t => DoRequest(stat)),
+                    (token, test));
             }
             catch (Exception e)
             {
@@ -65,11 +119,11 @@ namespace PerformanceTest
 
         private static void Main(string[] args)
         {
-            httpClient = new HttpClient();
+            httpClient = new WrapperClient();
             performanceTests = new List<PerformanceTest>();
             globalStats = new ConcurrentStack<Statistic>();
-            threads = new Thread[users];
             countdownEvent = new CountdownEvent(users);
+            ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
 
             LoadModules();
 
@@ -106,20 +160,15 @@ namespace PerformanceTest
                 {
                     for (var i = 0; i < spawnRate && queued < users; i++)
                     {
-                        var thread = new Thread(() => DoRequests(ref token, ref test))
-                        {
-                            Priority = ThreadPriority.Lowest
-                        };
-                        threads[queued] = thread;
+                        QueueTask(token, test, false);
                         queued++;
-                        thread.Start();
                     }
 
-                    Console.WriteLine($"Spawned {queued} out of {users}");
+                    Console.WriteLine("Spawned {0} out of {1} threads", queued, users);
 
                     if (queued == users)
                     {
-                        Console.WriteLine("Finished spawning users");
+                        Console.WriteLine("Finished spawning {0} threads", users);
                     }
                 }
 
@@ -137,23 +186,14 @@ namespace PerformanceTest
 
             Console.WriteLine(
                 $"{countdownEvent.InitialCount - countdownEvent.CurrentCount} out of {countdownEvent.InitialCount} shut down.");
-            var finishedThreads = 0;
-
-            foreach (var thread in threads)
-            {
-                if (thread != null && thread.Join(100))
-                {
-                    finishedThreads++;
-                }
-            }
-
-            Console.WriteLine($"{finishedThreads} out of {countdownEvent.InitialCount} finished.");
-            Console.WriteLine("Shut down.");
 
             var responseTimes = globalStats.Select(stat => (double) stat.TimeTakenMilliseconds).ToArray();
+            Console.WriteLine();
+            Console.WriteLine($"Min Response time: {responseTimes.Min()}ms");
             Console.WriteLine($"Average Response time: {Math.Round(responseTimes.Average(), 0)}ms");
             Console.WriteLine($"95th Response time: {responseTimes.Percentile(0.95)}ms");
             Console.WriteLine($"99th Response time: {responseTimes.Percentile(0.99)}ms");
+            Console.WriteLine($"Max Response time: {responseTimes.Max()}ms");
             Console.WriteLine($"Average RPS: {Math.Round(rps.Average(), 0)}");
             Console.WriteLine($"Requests: {globalStats.Count}");
             Console.WriteLine($"Successful Requests {globalStats.Count(stat => stat.Success)}");
