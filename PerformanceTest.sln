@@ -4,6 +4,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PerformanceTest", "Performa
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Test", "Test\Test.csproj", "{A2A988D9-F550-4F92-8833-E6E27375C40B}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "LocustComparison", "LocustComparison", "{2DCE165E-7D18-455B-933E-501AB2F34397}"
+ProjectSection(SolutionItems) = preProject
+	LocustComparison\docker-compose.yml = LocustComparison\docker-compose.yml
+	LocustComparison\locustfile.py = LocustComparison\locustfile.py
+	LocustComparison\Readme.md = LocustComparison\Readme.md
+EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

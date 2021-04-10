@@ -1,0 +1,22 @@
+version: '3'
+services:
+  api:
+    image: nginxdemos/hello
+
+  master:
+    image: locustio/locust
+    ports:
+      - "8089:8089"
+    links:
+      - api
+    volumes:
+      - ./:/mnt/locust
+    command: -f /mnt/locust/locustfile.py --headless -u 7500 -r 500 --run-time 30s --master --expect-workers 30 --host "http://api:80"
+  
+  worker:
+    image: locustio/locust
+    links:
+      - api
+    volumes:
+      - ./:/mnt/locust
+    command: -f /mnt/locust/locustfile.py --worker --master-host master
