@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net6.0</TargetFramework>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+        <DebugType>full</DebugType>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="CommandLineParser" Version="2.9.0-preview1"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\PerformanceTest\PerformanceTest.csproj"/>
+        <ProjectReference Include="..\Test\Test.csproj"/>
+    </ItemGroup>
+
+    <Target Name="CopyTestDll" AfterTargets="Build">
+        <ItemGroup>
+            <TestDll Include="$(TargetDir)Test.*"/>
+        </ItemGroup>
+        <Copy
+            SourceFiles="@(TestDll)"
+            DestinationFolder="$(TargetDir)Modules\"
+            SkipUnchangedFiles="true"
+        />
+    </Target>
+</Project>

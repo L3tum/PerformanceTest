@@ -1,10 +1,10 @@
 using System.Net.Http;
 
-namespace PerformanceTest
+namespace PerformanceTester
 {
     public class HttpResponse
     {
         public long TimeTaken;
-        public HttpResponseMessage ResponseMessage;
+        public HttpResponseMessage ResponseMessage = null!;
     }
 }

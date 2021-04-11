@@ -1,4 +1,4 @@
-namespace PerformanceTest
+namespace PerformanceTester
 {
     public struct Statistic
     {

@@ -1,9 +1,10 @@
 ﻿using System.Net.Http;
 using System.Runtime.CompilerServices;
+using PerformanceTest;
 
 namespace Test
 {
-    public class TestPerformance : PerformanceTest.PerformanceTest
+    public class TestPerformance : IPerformanceTest
     {
         public override int MinWaitTime()
         {

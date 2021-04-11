@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace PerformanceTest
 {
-    public abstract class PerformanceTest
+    public abstract class IPerformanceTest
     {
         /**
          * Returns minimum wait time between requests in milliseconds
