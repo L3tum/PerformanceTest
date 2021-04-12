@@ -19,5 +19,8 @@ namespace PerformanceTester
 
         [Option('t', "test", Required = true, HelpText = "Test to execute. ClassName for C# Scripts for example.")]
         public string Test { get; set; } = null!;
+
+        [Option('h', "host", Required = true, HelpText = "Host to test against")]
+        public string Host { get; set; } = null!;
     }
 }

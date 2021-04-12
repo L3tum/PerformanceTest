@@ -14,37 +14,34 @@ namespace PerformanceTester
 {
     public class PerformanceTester
     {
-        private readonly CountdownEvent countdownEvent;
-        private readonly ConcurrentStack<Statistic> globalStats;
-        private readonly WrapperClient httpClient;
+        private readonly string host;
         private readonly IPerformanceTest[] performanceTests;
-        private readonly List<int> rps;
         private readonly int runTimeInSeconds;
         private readonly int spawnRate;
         private readonly string testToExecute;
         private readonly int users;
-        private Stopwatch? stopwatch;
+        private CountdownEvent countdownEvent = null!;
+        private ConcurrentStack<Statistic> globalStats = null!;
+        private WrapperClient httpClient = null!;
+        private List<int> rps = null!;
 
         public PerformanceTester(int users, int spawnRate, int runTimeInSeconds, string testToExecute,
-            string? fileToLoad)
+            string? fileToLoad, string host)
         {
-            httpClient = new WrapperClient();
             this.users = users;
             this.spawnRate = spawnRate;
             this.runTimeInSeconds = runTimeInSeconds;
             this.testToExecute = testToExecute;
+            this.host = host;
             performanceTests = TestLoader.LoadTests(fileToLoad);
-            countdownEvent = new CountdownEvent(users);
-            globalStats = new ConcurrentStack<Statistic>();
-            rps = new List<int>();
         }
 
         public PerformanceTester(Options options) : this(options.Users, options.SpawnRate, options.RunTimeInSeconds,
-            options.Test, options.File)
+            options.Test, options.File, options.Host)
         {
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         private void QueueTask(CancellationToken token, IPerformanceTest test, bool delay)
         {
             if (token.IsCancellationRequested)
@@ -53,31 +50,29 @@ namespace PerformanceTester
                 return;
             }
 
-            ThreadPool.QueueUserWorkItem(state =>
+            ThreadPool.QueueUserWorkItem(async state =>
             {
                 var (tok, tes) = (ValueTuple<CancellationToken, IPerformanceTest>) state!;
-                Task.Delay(delay ? new Random().Next(tes.MinWaitTime(), tes.MaxWaitTime()) : 0)
-                    .ContinueWith(t =>
+                await Task.Delay(delay ? new Random().Next(tes.MinWaitTime(), tes.MaxWaitTime()) : 0)
+                    .ContinueWith(async t =>
                     {
                         var request = tes.GetRequest();
-                        return httpClient.SendAsync(request,
+                        request.RequestUri = new Uri($"{host}{request.RequestUri}");
+                        var response = await httpClient.SendAsync(request,
                             tes.WaitForBody()
                                 ? HttpCompletionOption.ResponseContentRead
                                 : HttpCompletionOption.ResponseHeadersRead, tok);
-                    })
-                    .ContinueWith(async t =>
-                    {
+
                         if (tok.IsCancellationRequested)
                         {
                             countdownEvent.Signal();
                             return;
                         }
 
-                        var response = await await t;
                         Statistic statistic;
                         statistic.Success = tes.IsSuccessful(response.ResponseMessage);
                         statistic.RequestMethod = response.ResponseMessage.RequestMessage!.Method.Method;
-                        statistic.RequestUri = response.ResponseMessage.RequestMessage!.RequestUri!.ToString();
+                        statistic.RequestUri = response.ResponseMessage.RequestMessage!.RequestUri!.PathAndQuery;
                         statistic.StatusCode = (int) response.ResponseMessage.StatusCode;
                         statistic.TimeTakenMilliseconds = (int) response.TimeTaken;
                         globalStats.Push(statistic);
@@ -100,10 +95,12 @@ namespace PerformanceTester
             var token = cancellationTokenSource.Token;
             var oldCount = 0;
             var queued = 0;
+            var runTimeInMilliseconds = runTimeInSeconds * 1000;
+            var sw = Stopwatch.StartNew();
 
             Console.WriteLine("Starting up...");
 
-            while (stopwatch!.ElapsedMilliseconds < runTimeInSeconds * 1000)
+            while (sw.ElapsedMilliseconds < runTimeInMilliseconds)
             {
                 if (queued < users)
                 {
@@ -146,15 +143,20 @@ namespace PerformanceTester
                 throw new KeyNotFoundException($"Test {testToExecute} could not be found!");
             }
 
+            countdownEvent = new CountdownEvent(users);
+            globalStats = new ConcurrentStack<Statistic>();
+            rps = new List<int>();
+            httpClient = new WrapperClient();
             ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+            Thread.Sleep(100);
 
             var oldLatencyMode = GCSettings.LatencyMode;
             var oldThreadPriority = Thread.CurrentThread.Priority;
+            GC.Collect();
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
+            GC.Collect();
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
-            stopwatch = Stopwatch.StartNew();
             LaunchTest(test);
-            stopwatch.Stop();
             Thread.CurrentThread.Priority = oldThreadPriority;
             GCSettings.LatencyMode = oldLatencyMode;
         }
@@ -172,6 +174,24 @@ namespace PerformanceTester
             Console.WriteLine($"Requests: {globalStats.Count}");
             Console.WriteLine($"Successful Requests {globalStats.Count(stat => stat.Success)}");
             Console.WriteLine($"Failed Requests {globalStats.Count(stat => !stat.Success)}");
+        }
+
+        public Dictionary<string, List<Statistic>> GetStatistics()
+        {
+            var stats = new Dictionary<string, List<Statistic>>();
+
+            foreach (var statistic in globalStats)
+            {
+                var key = $"{statistic.RequestMethod}:{statistic.RequestUri}";
+                if (!stats.ContainsKey(key))
+                {
+                    stats.Add(key, new List<Statistic>());
+                }
+
+                stats[key].Add(statistic);
+            }
+
+            return stats;
         }
     }
 }

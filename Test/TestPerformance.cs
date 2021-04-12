@@ -19,7 +19,7 @@ namespace Test
         [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
         public override HttpRequestMessage GetRequest()
         {
-            return new(HttpMethod.Get, "http://127.0.0.1:8080");
+            return new(HttpMethod.Get, "/");
         }
     }
 }

@@ -16,22 +16,25 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="CommandLineParser" Version="2.9.0-preview1"/>
+        <PackageReference Include="CommandLineParser" Version="2.9.0-preview1" />
+        <PackageReference Include="RazorEngineCore" Version="2021.3.1" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\PerformanceTest\PerformanceTest.csproj"/>
-        <ProjectReference Include="..\Test\Test.csproj"/>
+        <ProjectReference Include="..\PerformanceTest\PerformanceTest.csproj" />
+        <ProjectReference Include="..\Test\Test.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="report_template.html">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
     <Target Name="CopyTestDll" AfterTargets="Build">
         <ItemGroup>
-            <TestDll Include="$(TargetDir)Test.*"/>
+            <TestDll Include="$(TargetDir)Test.*" />
         </ItemGroup>
-        <Copy
-            SourceFiles="@(TestDll)"
-            DestinationFolder="$(TargetDir)Modules\"
-            SkipUnchangedFiles="true"
-        />
+        <Copy SourceFiles="@(TestDll)" DestinationFolder="$(TargetDir)Modules\" SkipUnchangedFiles="true" />
     </Target>
 </Project>

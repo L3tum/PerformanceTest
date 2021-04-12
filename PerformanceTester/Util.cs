@@ -6,7 +6,7 @@ namespace PerformanceTester
 {
     public static class Util
     {
-        internal static double Percentile(this IEnumerable<double> seq, double percentile)
+        public static double Percentile(this IEnumerable<double> seq, double percentile)
         {
             var elements = seq.ToArray();
             Array.Sort(elements);
@@ -19,6 +19,11 @@ namespace PerformanceTester
             }
 
             return elements[index];
+        }
+
+        public static double GetPercentile(IEnumerable<double> seq, double percentile)
+        {
+            return seq.Percentile(percentile);
         }
     }
 }
