@@ -30,7 +30,8 @@ namespace PerformanceTester
                     performanceTester.GetStatistics(),
                     options.Test,
                     options.Users,
-                    options.Host
+                    options.Host,
+                    performanceTester.GetRps()
                 )
             );
         }

@@ -9,6 +9,7 @@ namespace PerformanceTester
         Dictionary<string, List<Statistic>> Statistics,
         string Test,
         int Users,
-        string Host
+        string Host,
+        List<int> RequestsPerSeconds
     );
 }

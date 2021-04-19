@@ -6,14 +6,9 @@ namespace PerformanceTest
     public abstract class IPerformanceTest
     {
         /**
-         * Returns minimum wait time between requests in milliseconds
+         * Returns wait time between requests in milliseconds
          */
-        public abstract int MinWaitTime();
-
-        /**
-         * Returns maximum wait time between requests in milliseconds
-         */
-        public abstract int MaxWaitTime();
+        public abstract int WaitTime();
 
         /**
          * Gets the request to be executed. Is called for every request.

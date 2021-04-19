@@ -6,12 +6,8 @@ namespace Test
 {
     public class TestPerformance : IPerformanceTest
     {
-        public override int MinWaitTime()
-        {
-            return 1000;
-        }
-
-        public override int MaxWaitTime()
+        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+        public override int WaitTime()
         {
             return 1000;
         }
@@ -20,6 +16,12 @@ namespace Test
         public override HttpRequestMessage GetRequest()
         {
             return new(HttpMethod.Get, "/");
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+        public override bool WaitForBody()
+        {
+            return false;
         }
     }
 }

@@ -9,19 +9,19 @@ namespace PerformanceTester
 {
     public static class TestLoader
     {
-        public static IPerformanceTest[] LoadTests(string? file)
+        public static Type[] LoadTests(string? file)
         {
             if (file != null)
             {
                 return LoadFile(file);
             }
 
-            var performanceTests = new List<IPerformanceTest>();
+            var performanceTests = new List<Type>();
             var files = LoadFiles();
 
             foreach (var fileInfo in files)
             {
-                var test = fileInfo.Extension.ToLowerInvariant() switch
+                var tests = fileInfo.Extension.ToLowerInvariant() switch
                 {
                     ".dll" => LoadDll(fileInfo.FullName),
                     // ".py" => LoadPython(),
@@ -30,37 +30,35 @@ namespace PerformanceTester
                     _ => null
                 };
 
-                if (test != null)
+                if (tests != null)
                 {
-                    performanceTests.AddRange(test);
+                    performanceTests.AddRange(tests);
                 }
             }
 
             return performanceTests.ToArray();
         }
 
-        private static IPerformanceTest[] LoadDll(string file)
+        private static Type[] LoadDll(string file)
         {
             try
             {
                 var assembly = Assembly.LoadFile(file);
-                var tests = (from type in assembly.GetTypes()
+                return (from type in assembly.GetTypes()
                     where type.BaseType == typeof(IPerformanceTest)
-                    select Activator.CreateInstance(type) as IPerformanceTest ??
-                           throw new InvalidOperationException(type.FullName)).ToList();
-                return tests.ToArray();
+                    select type).ToArray();
             }
             catch
             {
                 // Intentionally left blank
             }
 
-            return Array.Empty<IPerformanceTest>();
+            return Array.Empty<Type>();
         }
 
-        private static IPerformanceTest[] LoadFile(string file)
+        private static Type[] LoadFile(string file)
         {
-            return Array.Empty<IPerformanceTest>();
+            return Array.Empty<Type>();
         }
 
         private static FileInfo[] LoadFiles()

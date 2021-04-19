@@ -3,27 +3,27 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Http;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using PerformanceTest;
+using PerformanceTester.Workers;
 
 namespace PerformanceTester
 {
     public class PerformanceTester
     {
-        private readonly string host;
-        private readonly IPerformanceTest[] performanceTests;
+        private static WrapperClient httpClient = new();
+        private readonly Type[] performanceTests;
         private readonly int runTimeInSeconds;
         private readonly int spawnRate;
         private readonly string testToExecute;
         private readonly int users;
         private CountdownEvent countdownEvent = null!;
-        private ConcurrentStack<Statistic> globalStats = null!;
-        private WrapperClient httpClient = null!;
+        private ConcurrentQueue<Statistic> globalStats = null!;
         private List<int> rps = null!;
+        private IPerformanceTest test = null!;
 
         public PerformanceTester(int users, int spawnRate, int runTimeInSeconds, string testToExecute,
             string? fileToLoad, string host)
@@ -32,8 +32,8 @@ namespace PerformanceTester
             this.spawnRate = spawnRate;
             this.runTimeInSeconds = runTimeInSeconds;
             this.testToExecute = testToExecute;
-            this.host = host;
             performanceTests = TestLoader.LoadTests(fileToLoad);
+            httpClient.BaseAddress = new Uri(host);
         }
 
         public PerformanceTester(Options options) : this(options.Users, options.SpawnRate, options.RunTimeInSeconds,
@@ -41,112 +41,105 @@ namespace PerformanceTester
         {
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-        private void QueueTask(CancellationToken token, IPerformanceTest test, bool delay)
-        {
-            if (token.IsCancellationRequested)
-            {
-                countdownEvent.Signal();
-                return;
-            }
-
-            ThreadPool.QueueUserWorkItem(async state =>
-            {
-                var (tok, tes) = (ValueTuple<CancellationToken, IPerformanceTest>) state!;
-                await Task.Delay(delay ? new Random().Next(tes.MinWaitTime(), tes.MaxWaitTime()) : 0)
-                    .ContinueWith(async t =>
-                    {
-                        var request = tes.GetRequest();
-                        request.RequestUri = new Uri($"{host}{request.RequestUri}");
-                        var response = await httpClient.SendAsync(request,
-                            tes.WaitForBody()
-                                ? HttpCompletionOption.ResponseContentRead
-                                : HttpCompletionOption.ResponseHeadersRead, tok);
-
-                        if (tok.IsCancellationRequested)
-                        {
-                            countdownEvent.Signal();
-                            return;
-                        }
-
-                        Statistic statistic;
-                        statistic.Success = tes.IsSuccessful(response.ResponseMessage);
-                        statistic.RequestMethod = response.ResponseMessage.RequestMessage!.Method.Method;
-                        statistic.RequestUri = response.ResponseMessage.RequestMessage!.RequestUri!.PathAndQuery;
-                        statistic.StatusCode = (int) response.ResponseMessage.StatusCode;
-                        statistic.TimeTakenMilliseconds = (int) response.TimeTaken;
-                        globalStats.Push(statistic);
-
-                        if (tok.IsCancellationRequested)
-                        {
-                            countdownEvent.Signal();
-                            return;
-                        }
-
-                        QueueTask(tok, test, true);
-                    });
-            }, (token, test));
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-        private void LaunchTest(IPerformanceTest test)
+        private void LaunchTest()
         {
-            var cancellationTokenSource = new CancellationTokenSource();
-            var token = cancellationTokenSource.Token;
+            countdownEvent = new CountdownEvent(users);
+            globalStats = new ConcurrentQueue<Statistic>();
+            rps = new List<int>(Math.Min(5000, runTimeInSeconds));
             var oldCount = 0;
             var queued = 0;
             var runTimeInMilliseconds = runTimeInSeconds * 1000;
             var sw = Stopwatch.StartNew();
+            var workers = new Worker[Environment.ProcessorCount];
+            var threads = new Thread[Environment.ProcessorCount];
+            var started = false;
 
             Console.WriteLine("Starting up...");
+
+            for (var i = 0; i < Environment.ProcessorCount; i++)
+            {
+                var worker = new TaskWorker();
+                worker.SetHttpClient(ref httpClient);
+                worker.SetPerformanceTest(ref test);
+                worker.SetRequestsPerSecond(0);
+                worker.SetStopwatch(ref sw);
+                workers[i] = worker;
+                threads[i] = new Thread(worker.Launch);
+            }
 
             while (sw.ElapsedMilliseconds < runTimeInMilliseconds)
             {
                 if (queued < users)
                 {
-                    for (var i = 0; i < spawnRate && queued < users; i++)
+                    queued += spawnRate;
+
+                    if (queued > users)
                     {
-                        QueueTask(token, test, false);
-                        queued++;
+                        queued = users;
                     }
 
-                    Console.WriteLine("Spawned {0} out of {1} threads", queued, users);
+                    var queuedPerWorker = (int) Math.Floor(queued / (double) workers.Length);
+
+                    foreach (var worker in workers)
+                    {
+                        worker.SetRequestsPerSecond(queuedPerWorker);
+                    }
+
+                    if (!started)
+                    {
+                        foreach (var thread in threads)
+                        {
+                            thread.Start();
+                        }
+
+                        started = true;
+                    }
+
+                    Console.Out.WriteLineAsync($"Spawned {queued} out of {users} threads");
 
                     if (queued == users)
                     {
-                        Console.WriteLine("Finished spawning {0} threads", users);
+                        Console.Out.WriteLineAsync($"Finished spawning {users} threads");
                     }
                 }
 
                 Thread.Sleep(1000);
-                var newCount = globalStats.Count;
+                var newCount = workers.Select(worker => worker.GetCompletedRequests()).Sum();
                 var diff = newCount - oldCount;
                 rps.Add(diff);
-                Console.WriteLine($"Executed {newCount} Requests | {diff} RPS");
+                Console.Out.WriteLineAsync($"Executed {newCount} Requests | {diff} RPS | Target {queued} RPS");
                 oldCount = newCount;
             }
 
             Console.WriteLine("Shutting down...");
-            cancellationTokenSource.Cancel();
-            countdownEvent.Wait(10000);
+
+            var stopTasks = new List<Task<Statistic[]>>(workers.Length);
+            stopTasks.AddRange(workers.Select(worker => worker.Stop()));
+
+            Task.WaitAll(stopTasks.ToArray());
+
+            foreach (var statistic in stopTasks.SelectMany(stopTask => stopTask.Result))
+            {
+                globalStats.Enqueue(statistic);
+            }
 
             Console.WriteLine(
                 $"{countdownEvent.InitialCount - countdownEvent.CurrentCount} out of {countdownEvent.InitialCount} shut down.");
+            sw.Stop();
         }
 
         public void RunTest()
         {
-            var test = performanceTests.FirstOrDefault(test => test.GetType().Name == testToExecute);
+            var performanceTest = performanceTests.FirstOrDefault(test => test.Name == testToExecute);
 
-            if (test == null)
+            if (performanceTest == null)
             {
                 throw new KeyNotFoundException($"Test {testToExecute} could not be found!");
             }
 
-            countdownEvent = new CountdownEvent(users);
-            globalStats = new ConcurrentStack<Statistic>();
-            rps = new List<int>();
-            httpClient = new WrapperClient();
+            test = (IPerformanceTest) Activator.CreateInstance(performanceTest)!;
+            ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
             ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
             Thread.Sleep(100);
 
@@ -156,7 +149,8 @@ namespace PerformanceTester
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
             GC.Collect();
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
-            LaunchTest(test);
+            GC.Collect();
+            LaunchTest();
             Thread.CurrentThread.Priority = oldThreadPriority;
             GCSettings.LatencyMode = oldLatencyMode;
         }
@@ -167,6 +161,7 @@ namespace PerformanceTester
             Console.WriteLine();
             Console.WriteLine($"Min Response time: {responseTimes.Min()}ms");
             Console.WriteLine($"Average Response time: {Math.Round(responseTimes.Average(), 0)}ms");
+            Console.WriteLine($"90th Response time: {responseTimes.Percentile(0.90)}ms");
             Console.WriteLine($"95th Response time: {responseTimes.Percentile(0.95)}ms");
             Console.WriteLine($"99th Response time: {responseTimes.Percentile(0.99)}ms");
             Console.WriteLine($"Max Response time: {responseTimes.Max()}ms");
@@ -192,6 +187,11 @@ namespace PerformanceTester
             }
 
             return stats;
+        }
+
+        public List<int> GetRps()
+        {
+            return rps;
         }
     }
 }

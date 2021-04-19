@@ -104,6 +104,14 @@
             <td>
                 @Model.Host
             </td>
+        </tr>       
+        <tr>
+            <td>
+                Average RPS
+            </td>
+            <td>
+                @Math.Round(Model.RequestsPerSeconds.Average(), 0)
+            </td>
         </tr>
         <tr>
             <td>
