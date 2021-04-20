@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using RazorEngineCore;
 
-namespace PerformanceTester
+namespace PerformanceTester.Reporters
 {
-    public static class HtmlReportGenerator
+    public class HtmlReportGenerator : Reporter
     {
         private const string TEMPLATE = "report_template.html";
         private const string OUTPUT_FILE = "report.html";
 
-        public static bool GenerateReport(ReportModel reportModel)
+        public override bool GenerateReport(ReportModel reportModel)
         {
             var templateContents = File.ReadAllText(TEMPLATE);
             IRazorEngine engine = new RazorEngine();

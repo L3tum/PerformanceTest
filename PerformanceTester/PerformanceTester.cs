@@ -44,9 +44,6 @@ namespace PerformanceTester
         [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
         private void LaunchTest()
         {
-            countdownEvent = new CountdownEvent(users);
-            globalStats = new ConcurrentQueue<Statistic>();
-            rps = new List<int>(Math.Min(5000, runTimeInSeconds));
             var oldCount = 0;
             var queued = 0;
             var runTimeInMilliseconds = runTimeInSeconds * 1000;
@@ -147,28 +144,14 @@ namespace PerformanceTester
             var oldThreadPriority = Thread.CurrentThread.Priority;
             GC.Collect();
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
-            GC.Collect();
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
+            countdownEvent = new CountdownEvent(users);
+            globalStats = new ConcurrentQueue<Statistic>();
+            rps = new List<int>(Math.Min(5000, runTimeInSeconds));
             GC.Collect();
             LaunchTest();
             Thread.CurrentThread.Priority = oldThreadPriority;
             GCSettings.LatencyMode = oldLatencyMode;
-        }
-
-        public void PrintResults()
-        {
-            var responseTimes = globalStats.Select(stat => (double) stat.TimeTakenMilliseconds).ToArray();
-            Console.WriteLine();
-            Console.WriteLine($"Min Response time: {responseTimes.Min()}ms");
-            Console.WriteLine($"Average Response time: {Math.Round(responseTimes.Average(), 0)}ms");
-            Console.WriteLine($"90th Response time: {responseTimes.Percentile(0.90)}ms");
-            Console.WriteLine($"95th Response time: {responseTimes.Percentile(0.95)}ms");
-            Console.WriteLine($"99th Response time: {responseTimes.Percentile(0.99)}ms");
-            Console.WriteLine($"Max Response time: {responseTimes.Max()}ms");
-            Console.WriteLine($"Average RPS: {Math.Round(rps.Average(), 0)}");
-            Console.WriteLine($"Requests: {globalStats.Count}");
-            Console.WriteLine($"Successful Requests {globalStats.Count(stat => stat.Success)}");
-            Console.WriteLine($"Failed Requests {globalStats.Count(stat => !stat.Success)}");
         }
 
         public Dictionary<string, List<Statistic>> GetStatistics()
