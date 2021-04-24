@@ -21,7 +21,7 @@ namespace PerformanceTester.Workers
 
                 for (var i = 0; i < RequestsPerSecond; i++)
                 {
-                    tempTasks.Add(Task.Run( () => HttpClient.Send(PerformanceTest.GetRequest())));
+                    tempTasks.Add(Task.Run(() => HttpClient.Send(PerformanceTest.GetRequest())));
                 }
 
                 Task.WaitAll(tempTasks.ToArray());

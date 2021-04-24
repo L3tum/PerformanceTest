@@ -22,22 +22,24 @@ namespace PerformanceTester
         private readonly int users;
         private CountdownEvent countdownEvent = null!;
         private ConcurrentQueue<Statistic> globalStats = null!;
+        private readonly int numberOfThreads;
         private List<int> rps = null!;
         private IPerformanceTest test = null!;
 
         public PerformanceTester(int users, int spawnRate, int runTimeInSeconds, string testToExecute,
-            string? fileToLoad, string host)
+            string? fileToLoad, string host, int threads)
         {
             this.users = users;
             this.spawnRate = spawnRate;
             this.runTimeInSeconds = runTimeInSeconds;
             this.testToExecute = testToExecute;
+            numberOfThreads = threads;
             performanceTests = TestLoader.LoadTests(fileToLoad);
             httpClient.BaseAddress = new Uri(host);
         }
 
         public PerformanceTester(Options options) : this(options.Users, options.SpawnRate, options.RunTimeInSeconds,
-            options.Test, options.File, options.Host)
+            options.Test, options.File, options.Host, options.Threads)
         {
         }
 
@@ -48,13 +50,13 @@ namespace PerformanceTester
             var queued = 0;
             var runTimeInMilliseconds = runTimeInSeconds * 1000;
             var sw = Stopwatch.StartNew();
-            var workers = new Worker[Environment.ProcessorCount];
-            var threads = new Thread[Environment.ProcessorCount];
+            var workers = new Worker[numberOfThreads];
+            var threads = new Thread[numberOfThreads];
             var started = false;
 
             Console.WriteLine("Starting up...");
 
-            for (var i = 0; i < Environment.ProcessorCount; i++)
+            for (var i = 0; i < numberOfThreads; i++)
             {
                 var worker = new TaskWorker();
                 worker.SetHttpClient(ref httpClient);
@@ -76,7 +78,7 @@ namespace PerformanceTester
                         queued = users;
                     }
 
-                    var queuedPerWorker = (int) Math.Floor(queued / (double) workers.Length);
+                    var queuedPerWorker = (int) Math.Round(queued / (double) workers.Length, 0, MidpointRounding.ToPositiveInfinity);
 
                     foreach (var worker in workers)
                     {
@@ -145,11 +147,14 @@ namespace PerformanceTester
             GC.Collect();
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
+
             countdownEvent = new CountdownEvent(users);
             globalStats = new ConcurrentQueue<Statistic>();
             rps = new List<int>(Math.Min(5000, runTimeInSeconds));
             GC.Collect();
+
             LaunchTest();
+
             Thread.CurrentThread.Priority = oldThreadPriority;
             GCSettings.LatencyMode = oldLatencyMode;
         }

@@ -33,6 +33,13 @@
       </None>
     </ItemGroup>
 
+    <ItemGroup>
+      <Compile Remove="Modules\DynamicPerformanceTest.cs" />
+      <None Include="Modules\DynamicPerformanceTest.cs">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
     <Target Name="CopyTestDll" AfterTargets="Build">
         <ItemGroup>
             <TestDll Include="$(TargetDir)Test.*" />

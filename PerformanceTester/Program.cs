@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CommandLine;
@@ -8,12 +9,6 @@ namespace PerformanceTester
 {
     internal static class Program
     {
-        private static readonly Reporter[] Reporters =
-        {
-            new HtmlReportGenerator(),
-            new ConsoleReportGenerator()
-        };
-
         private static void Main(string[] args)
         {
             var optionsResult = Parser.Default.ParseArguments<Options>(args)!;
@@ -23,6 +18,11 @@ namespace PerformanceTester
             }
 
             var options = optionsResult.Value;
+
+            if (options.Threads == 0)
+            {
+                options.Threads = Environment.ProcessorCount;
+            }
 
             var performanceTester = new PerformanceTester(options);
             var startTime = DateTime.Now;
@@ -41,9 +41,23 @@ namespace PerformanceTester
                 performanceTester.GetRps()
             );
 
-            foreach (var reporter in Reporters)
+            if (reportModel.Statistics.Count == 0)
             {
-                reporter.GenerateReport(reportModel);
+                reportModel.Statistics.Add("no tests executed", new List<Statistic>
+                {
+                    new()
+                    {
+                        RequestMethod = "GET", RequestUri = "/", StatusCode = 415, Success = false,
+                        TimeTakenMilliseconds = 0
+                    }
+                });
+            }
+
+            new ConsoleReportGenerator().GenerateReport(reportModel);
+
+            if (options.HtmlReport)
+            {
+                new HtmlReportGenerator().GenerateReport(reportModel);
             }
         }
     }
