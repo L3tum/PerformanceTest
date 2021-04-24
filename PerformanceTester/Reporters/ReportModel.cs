@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace PerformanceTester
+namespace PerformanceTester.Reporters
 {
     public record ReportModel(string EndTime,
         int RunTimeInSeconds,
