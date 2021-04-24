@@ -15,14 +15,13 @@ namespace PerformanceTester
     public class PerformanceTester
     {
         private static WrapperClient httpClient = new();
+        private readonly int numberOfThreads;
         private readonly Type[] performanceTests;
         private readonly int runTimeInSeconds;
         private readonly int spawnRate;
         private readonly string testToExecute;
         private readonly int users;
-        private CountdownEvent countdownEvent = null!;
         private ConcurrentQueue<Statistic> globalStats = null!;
-        private readonly int numberOfThreads;
         private List<int> rps = null!;
         private IPerformanceTest test = null!;
 
@@ -78,7 +77,8 @@ namespace PerformanceTester
                         queued = users;
                     }
 
-                    var queuedPerWorker = (int) Math.Round(queued / (double) workers.Length, 0, MidpointRounding.ToPositiveInfinity);
+                    var queuedPerWorker = (int) Math.Round(queued / (double) workers.Length, 0,
+                        MidpointRounding.ToPositiveInfinity);
 
                     foreach (var worker in workers)
                     {
@@ -123,8 +123,6 @@ namespace PerformanceTester
                 globalStats.Enqueue(statistic);
             }
 
-            Console.WriteLine(
-                $"{countdownEvent.InitialCount - countdownEvent.CurrentCount} out of {countdownEvent.InitialCount} shut down.");
             sw.Stop();
         }
 
@@ -138,9 +136,6 @@ namespace PerformanceTester
             }
 
             test = (IPerformanceTest) Activator.CreateInstance(performanceTest)!;
-            ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
-            ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
-            Thread.Sleep(100);
 
             var oldLatencyMode = GCSettings.LatencyMode;
             var oldThreadPriority = Thread.CurrentThread.Priority;
@@ -148,7 +143,6 @@ namespace PerformanceTester
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
 
-            countdownEvent = new CountdownEvent(users);
             globalStats = new ConcurrentQueue<Statistic>();
             rps = new List<int>(Math.Min(5000, runTimeInSeconds));
             GC.Collect();
