@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -14,41 +15,57 @@ namespace PerformanceTester
 {
     public class PerformanceTester
     {
-        private static WrapperClient httpClient = new();
+        public const long SLEEP_IN_MS = 1000;
+
+        private static HttpClient httpClient = null!;
         private readonly int numberOfThreads;
         private readonly Type[] performanceTests;
         private readonly int runTimeInSeconds;
         private readonly int spawnRate;
         private readonly string testToExecute;
         private readonly int users;
+        private readonly bool waitForBody;
         private ConcurrentQueue<Statistic> globalStats = null!;
         private List<int> rps = null!;
         private IPerformanceTest test = null!;
 
         public PerformanceTester(int users, int spawnRate, int runTimeInSeconds, string testToExecute,
-            string? fileToLoad, string host, int threads)
+            string? fileToLoad, string host, int threads, int connections, bool waitForBody)
         {
             this.users = users;
             this.spawnRate = spawnRate;
             this.runTimeInSeconds = runTimeInSeconds;
             this.testToExecute = testToExecute;
+            this.waitForBody = waitForBody;
             numberOfThreads = threads;
             performanceTests = TestLoader.LoadTests(fileToLoad);
-            httpClient.BaseAddress = new Uri(host);
+            httpClient = new HttpClient(new SocketsHttpHandler
+            {
+                PreAuthenticate = false,
+                UseCookies = false,
+                UseProxy = false,
+                MaxAutomaticRedirections = 50,
+                MaxConnectionsPerServer = connections
+            })
+            {
+                BaseAddress = new Uri(host)
+            };
+            ThreadPool.SetMaxThreads(int.MaxValue, int.MaxValue);
+            ThreadPool.SetMinThreads(0, 128);
         }
 
         public PerformanceTester(Options options) : this(options.Users, options.SpawnRate, options.RunTimeInSeconds,
-            options.Test, options.File, options.Host, options.Threads)
+            options.Test, options.File, options.Host, options.Threads, options.Connections, options.WaitForBody)
         {
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         private void LaunchTest()
         {
             var oldCount = 0;
             var queued = 0;
-            var runTimeInMilliseconds = runTimeInSeconds * 1000;
-            var sw = Stopwatch.StartNew();
+            var runTimeInTicks = runTimeInSeconds * Stopwatch.Frequency;
             var workers = new Worker[numberOfThreads];
             var threads = new Thread[numberOfThreads];
             var started = false;
@@ -61,12 +78,14 @@ namespace PerformanceTester
                 worker.SetHttpClient(ref httpClient);
                 worker.SetPerformanceTest(ref test);
                 worker.SetRequestsPerSecond(0);
-                worker.SetStopwatch(ref sw);
+                worker.SetHttpCompletionOption(waitForBody);
                 workers[i] = worker;
                 threads[i] = new Thread(worker.Launch);
             }
 
-            while (sw.ElapsedMilliseconds < runTimeInMilliseconds)
+            var startTicks = Stopwatch.GetTimestamp();
+
+            while (Stopwatch.GetTimestamp() - startTicks < runTimeInTicks)
             {
                 if (queued < users)
                 {
@@ -122,8 +141,6 @@ namespace PerformanceTester
             {
                 globalStats.Enqueue(statistic);
             }
-
-            sw.Stop();
         }
 
         public void RunTest()

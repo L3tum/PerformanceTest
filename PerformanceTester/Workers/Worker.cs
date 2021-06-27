@@ -1,4 +1,5 @@
-using System.Diagnostics;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using PerformanceTest;
 
@@ -6,29 +7,38 @@ namespace PerformanceTester.Workers
 {
     public abstract class Worker
     {
-        protected WrapperClient HttpClient = null!;
+        protected HttpClient HttpClient = null!;
+        protected HttpCompletionOption HttpCompletionOption;
         protected IPerformanceTest PerformanceTest = null!;
         protected int RequestsPerSecond;
-        protected Stopwatch Stopwatch = null!;
 
         public void SetPerformanceTest(ref IPerformanceTest performanceTest)
         {
             PerformanceTest = performanceTest;
         }
 
-        public void SetHttpClient(ref WrapperClient httpClient)
+        public void SetHttpClient(ref HttpClient httpClient)
         {
             HttpClient = httpClient;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        [SkipLocalsInit]
         public void SetRequestsPerSecond(int rps)
         {
             RequestsPerSecond = rps;
         }
 
-        public void SetStopwatch(ref Stopwatch stopwatch)
+        public void SetHttpCompletionOption(HttpCompletionOption option)
         {
-            Stopwatch = stopwatch;
+            HttpCompletionOption = option;
+        }
+
+        public void SetHttpCompletionOption(bool waitForBody)
+        {
+            HttpCompletionOption = waitForBody
+                ? HttpCompletionOption.ResponseContentRead
+                : HttpCompletionOption.ResponseHeadersRead;
         }
 
         public abstract void Launch();

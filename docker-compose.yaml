@@ -1,0 +1,13 @@
+version: '3.4'
+
+services:
+  api:
+    image: nginxdemos/hello
+  loadbalancer:
+    image: nginx:latest
+    volumes:
+      - ./LocustComparison/nginx_loadbalancer.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    ports:
+      - "8080:8080"

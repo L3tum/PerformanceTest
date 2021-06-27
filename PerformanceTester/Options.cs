@@ -23,12 +23,21 @@ namespace PerformanceTester
         [Option('h', "host", Required = true, HelpText = "Host to test against")]
         public string Host { get; set; } = null!;
 
-        [Option("html", Default = false, Required = false,
+        [Option("html", Default = true, Required = false,
             HelpText = "Generate a HTML report and save it to 'report.html'")]
         public bool HtmlReport { get; set; }
 
         [Option("threads", Default = 0, Required = false,
             HelpText = "Number of workers to spawn/expect. Default is number of logical threads on this machine.")]
         public int Threads { get; set; }
+
+        [Option('c', "connections", Default = int.MaxValue, Required = false,
+            HelpText = "Number of connections to establish with the server")]
+        public int Connections { get; set; }
+
+        [Option('b', "wait-for-body", Default = true, Required = false,
+            HelpText =
+                "Configures the Client to wait for the whole body to be received. This may be important if you use a streaming approach that sends headers first instead of buffering the output (for example, PHP buffers the output by default).")]
+        public bool WaitForBody { get; set; }
     }
 }

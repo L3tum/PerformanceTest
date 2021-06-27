@@ -90,7 +90,8 @@ namespace PerformanceTester
                 assemblyName,
                 new[] {syntaxTree},
                 references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                    optimizationLevel: OptimizationLevel.Release));
 
             using var ms = new MemoryStream();
             // write IL code into memory

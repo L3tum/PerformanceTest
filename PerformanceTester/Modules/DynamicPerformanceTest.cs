@@ -1,16 +1,13 @@
 using System;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using PerformanceTest;
 
 namespace PerformanceTester.Modules
 {
     public class DynamicPerformanceTest : IPerformanceTest
     {
-        public override int WaitTime()
-        {
-            return 1000;
-        }
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
         public override HttpRequestMessage GetRequest()
         {
             return new(HttpMethod.Get, "/?dynamic=true");
